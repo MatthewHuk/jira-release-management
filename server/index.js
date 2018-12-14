@@ -1,0 +1,277 @@
+const express = require("express");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
+
+const JiraClient = require("jira-connector");
+var request = require("request");
+
+const jiraHost = "";
+const username = "";
+const decryptedString = "";
+const baseurl = "";
+
+const projectId = "11702";
+const releaseManagmentId = "11701";
+const releaseIssueTypeId = "10600";
+const boardId = "366";
+
+const moment = require("moment");
+require("moment/locale/en-gb");
+
+const app = express();
+
+// enhance app security with Helmet
+app.use(helmet());
+
+app.use(bodyParser.urlencoded({ extended: true }));
+// use bodyParser to parse application/json content-type
+app.use(bodyParser.json());
+
+// enable all CORS requests
+app.use(cors());
+
+// log HTTP requests
+app.use(morgan("combined"));
+
+let jira;
+
+app.get("/ping", function(req, res) {
+  return res.send("pong");
+});
+
+app.get("/releases", function(req, res) {
+  return res.status(200).send([
+    {
+      label: "API nodes (.NET Framework)",
+      value: "API-QT"
+    },
+    {
+      label: "Enquiry Orchestrator (.NET Core)",
+      value: "EO-QT"
+    },
+    {
+      label: "Provider Nodes",
+      value: "Provider Nodes"
+    },
+    {
+      label: "Provider Shims",
+      value: "PSH-QT"
+    },
+    {
+      label: "Retrieval Aggregator",
+      value: "RA-QT"
+    },
+    {
+      label: "Risk migrator",
+      value: "RM-QT"
+    },
+    {
+      label: "Terminator",
+      value: "T-QT"
+    },
+    {
+      label: "API Shims",
+      value: "ASH-QT"
+    },
+    {
+      label: "Rabbit",
+      value: "RB-QT"
+    },
+    {
+      label: "AWS",
+      value: "AWS-QT"
+    },
+    {
+      label: "Diagnostics",
+      value: "DIAG-QT"
+    },
+    {
+      label: "Auxiliary Data Manager",
+      value: "AUX-QT"
+    }
+  ]);
+});
+
+app.use(async function(req, res, next) {
+  jira = new JiraClient({
+    host: jiraHost,
+    basic_auth: {
+      username: username,
+      password: decryptedString
+    }
+  });
+
+  next();
+});
+
+app.get("/issues", async function(req, res) {
+  try {
+    var issue = await jira.issue.getIssue({ issueKey: "QT-1869" });
+    console.log(issue.fields.summary);
+    return res.status(200).send(issue);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send(error);
+  }
+});
+
+app.get("/issues-for-board", async function(req, res) {
+  try {
+    var sprint = await jira.board.getIssuesForBoard({ boardId: boardId });
+    return res.status(200).send(sprint);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send(error);
+  }
+});
+
+app.get("/active-sprint", async function(req, res) {
+  try {
+    var sprint = await jira.board.getSprintsForBoard({boardId: boardId,state: "active"});
+
+    return res.status(200).send(sprint.values[0].id.toString());
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send(error);
+  }
+});
+
+app.get("/issues-in-sprint", async function(req, res) {
+  try {
+    let sprint = await jira.board.getSprintsForBoard({boardId: boardId, state: "active"});
+    sprintId = sprint.values[0].id;
+
+    var options = {
+      method: "GET",
+      url: `${baseurl}/search?jql=Sprint in (${sprintId},${sprintId -1})&fields=id,key&maxResults=50`,
+      auth: {
+        username: username,
+        password: decryptedString
+      },
+      headers: {
+        Accept: "application/json"
+      }
+    };
+
+    request(options, function(error, response, body) {
+      if (error) throw new Error(error);
+
+      let map = JSON.parse(response.body).issues.map(
+        x =>
+          (obj = {
+            label: x.key,
+            value: x.id
+          })
+      );
+
+      return res.status(response.statusCode).send(map);
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send(error);
+  }
+});
+
+app.post("/create-release", async function(req, res) {
+  try {
+    let exampleresult = {
+      id: "127185",
+      key: "RM-6268",
+      self: `${baseurl}/issue/127185`
+    };
+
+    //console.log(req.body.issues)
+
+    let createdReleaseIssue = await CreateReleaseIssue(req, res);
+    let createdIssueLink = await CreateIssueLink(req.body.issues,createdReleaseIssue);
+    let createdVersion = await CreateVersion(req, res, createdReleaseIssue);
+
+    let result = {
+      createdReleaseIssue: createdReleaseIssue,
+      createdVersion: createdVersion,
+      createdIssueLink: createdIssueLink
+    };
+
+    return res.status(200).send(result);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send(error);
+  }
+});
+
+async function CreateIssueLink(issues, createdReleaseIssue) {
+  let iLink = {
+    type: {
+      name: "Releases"
+    },
+    inwardIssue: {
+      key: createdReleaseIssue.key
+    },
+    outwardIssue: {
+      key: issues[0].label
+    },
+    comment: {
+      body: `Linked related issue! ${createdReleaseIssue.key} to ${
+        issues[0].label
+      } generated by the quoting release management tool`
+    }
+  };
+
+  let issueLink = await jira.issueLink.createIssueLink({ issueLink: iLink });
+  console.log(issueLink);
+  return issueLink;
+}
+
+async function CreateReleaseIssue(req, res) {
+  //${baseurl}/issue console.log(req.body.issue[0].label);
+  let date = moment() .utc(req.body.date).format("YYYY-MM-DD H:mm:ss");
+
+  let i = {
+    fields: {
+      project: {
+        id: releaseManagmentId //Release Management
+      },
+      summary: `Quoting Test Release for ${req.body.release.label} - ${date}`, // In the title, add the team, service, date and time of the release,
+      description: `Release for ${req.body.release.label} at ${moment().utc(req.body.date).toDate()} for ${JSON.stringify(req.body.issues )} generated by the quoting release management tool`,
+      issuetype: {
+        id: releaseIssueTypeId, //Release into production" issuetype
+        name: "Release"
+      },
+      customfield_11200: {id: "21248"}, // Team affected
+      customfield_10802: [{ id: "21249"}], // Products affected
+      customfield_11502: moment(req.body.date).format(), //startdate
+      customfield_11501: moment(req.body.date).add(2, "hours").format() //enddate
+    }
+  };
+
+  console.log(JSON.stringify(i));
+
+  var issue = await jira.issue.createIssue(i);
+
+  return issue;
+}
+
+async function CreateVersion(req, res, createdReleaseIssue) {
+  let date = moment().utc(req.body.date).format("YYYY-MM-DD");
+
+  let v = {
+    name: `${req.body.release.value}/${date}`,
+    startDate: date,
+    releaseDate: date,
+    description: `${createdReleaseIssue.key}`,
+    projectId: projectId,
+    released: false
+  };
+  let version = await jira.version.createVersion({ version: v });
+  console.log(version);
+  //return v
+  return res.status(200).send(version);
+}
+
+// Choose the port and start the server
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, () => {
+  console.log(`Listening on port ${PORT}`);
+});
