@@ -25,7 +25,8 @@ class Releases extends Component {
       selectedIssue: null,
       selectedRelease: null,
       selectedDate: moment().startOf("day").add(8.5, "hours"),
-      isLoading: true
+      isLoading: true,
+      error:null
     };
   }
 
@@ -62,13 +63,24 @@ class Releases extends Component {
     e.preventDefault();
     console.log(`selected release is ${this.state.selectedRelease} and selected issue is ${this.state.selectedIssue}  and date is ${this.state.selectedDate}`);
 
-    const result = await axios.post("http://localhost:5001/create-release", {
-      release: this.state.selectedRelease,
-      issues: this.state.selectedIssue,
-      date: this.state.selectedDate
-    });
+    try{
 
-    console.log(result);
+      this.setState({error: null}) // Clear previous error
+
+      const result = await axios.post("http://localhost:5001/create-release", {
+        release: this.state.selectedRelease,
+        issues: this.state.selectedIssue,
+        date: this.state.selectedDate
+      });
+  
+      console.log(result);
+
+    } catch(err) {
+      
+      let e = (err.response) ? err.response.data : err;
+      this.setState({error: e.error})
+    }
+    
   }
 
   render() {
@@ -118,6 +130,7 @@ class Releases extends Component {
             </div>
           </div>
           <div className="row">
+          <div className="col-md-4">
             <div className="form-group">
               <input
                 type="submit"
@@ -125,12 +138,22 @@ class Releases extends Component {
                 disabled={
                   !this.state.selectedRelease ||
                   !this.state.selectedDate ||
-                  !this.state.selectedIssue
+                  !(this.state.selectedIssue && this.state.selectedIssue.length > 0)
                 }
                 className="btn btn-primary"
               />
+              </div>
             </div>
           </div>
+          <div className="Row">
+            <div className="col-md-12">
+              <div className="form-group">
+                <div className={this.state.error ? "alert alert-danger" : "halert alert-danger hidden"} >
+                    <span>{this.state.error}</span>
+                </div>
+              </div>
+            </div>
+          </div>       
         </form>
       </div>
     );
