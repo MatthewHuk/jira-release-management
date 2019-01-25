@@ -1,4 +1,5 @@
 const express = require("express");
+
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -9,8 +10,8 @@ var request = require("request");
 
 const jiraHost = "";
 const username = "";
-const decryptedString = "";
 const baseurl = "";
+
 
 const projectId = "11702";
 const releaseManagmentId = "11701";
@@ -53,7 +54,7 @@ app.get("/releases", function(req, res) {
     },
     {
       label: "Provider Nodes",
-      value: "Provider Nodes"
+      value: "P-QT"
     },
     {
       label: "Provider Shims",
@@ -90,65 +91,41 @@ app.get("/releases", function(req, res) {
     {
       label: "Auxiliary Data Manager",
       value: "AUX-QT"
+    },
+    {
+      label: "Search Engine",
+      value: "SE-QT"
     }
   ]);
 });
+
 
 app.use(async function(req, res, next) {
   jira = new JiraClient({
     host: jiraHost,
     basic_auth: {
       username: username,
-      password: decryptedString
+      password: ""
     }
   });
 
   next();
 });
 
-app.get("/issues", async function(req, res) {
-  try {
-    var issue = await jira.issue.getIssue({ issueKey: "QT-1869" });
-    console.log(issue.fields.summary);
-    return res.status(200).send(issue);
-  } catch (error) {
-    console.log(error);
-    return res.status(500).send(error);
-  }
-});
-
-app.get("/issues-for-board", async function(req, res) {
-  try {
-    var sprint = await jira.board.getIssuesForBoard({ boardId: boardId });
-    return res.status(200).send(sprint);
-  } catch (error) {
-    console.log(error);
-    return res.status(500).send(error);
-  }
-});
-
-app.get("/active-sprint", async function(req, res) {
-  try {
-    var sprint = await jira.board.getSprintsForBoard({boardId: boardId,state: "active"});
-
-    return res.status(200).send(sprint.values[0].id.toString());
-  } catch (error) {
-    console.log(error);
-    return res.status(500).send(error);
-  }
-});
-
 app.get("/issues-in-sprint", async function(req, res) {
   try {
-    let sprint = await jira.board.getSprintsForBoard({boardId: boardId, state: "active"});
-    sprintId = sprint.values[0].id;
+    
+    let sprint = await jira.board.getSprintsForBoard({boardId: boardId});
+    var currentSprintindex = sprint.values.findIndex(sprint => sprint.state === "active");
+    let currentSprintId = sprint.values[currentSprintindex].id
+    let previousSprintid = sprint.values[currentSprintindex -1].id 
 
     var options = {
       method: "GET",
-      url: `${baseurl}/search?jql=Sprint in (${sprintId},${sprintId -1})&fields=id,key&maxResults=50`,
+      url: `${baseurl}/search?jql=Sprint in (${currentSprintId},${previousSprintid})&fields=id,key&maxResults=75`,
       auth: {
         username: username,
-        password: decryptedString
+        password: ""
       },
       headers: {
         Accept: "application/json"
@@ -170,79 +147,176 @@ app.get("/issues-in-sprint", async function(req, res) {
     });
   } catch (error) {
     console.log(error);
-    return res.status(500).send(error);
+    return next(error);
   }
 });
 
 app.post("/create-release", async function(req, res) {
   try {
-    let exampleresult = {
-      id: "127185",
-      key: "RM-6268",
-      self: `${baseurl}/issue/127185`
-    };
+  
+    let chosenService = req.body.release // The service you are releasing
+    let chosenStartdate = req.body.date // The date you want to release
+    
+    let issues = await CheckIssuesExist(req.body.issues) // The chosen issues to release
+ 
+    // await Promise.all(issues.map(async (issue) => {
+    //   console.log(issue.key)
+    //   await Promise.all(issue.fields.fixVersions.map(async (fixversion) => {
+    //     console.log(fixversion.name)
+    //   }));
+    // }));
 
-    //console.log(req.body.issues)
+    let createdReleaseIssue = await CreateReleaseIssue(issues, chosenStartdate, chosenService);
+  
+    let createdIssueLink = await CreateIssueLink(issues,createdReleaseIssue);
+  
+    let createdVersion = await CreateVersion(chosenStartdate, chosenService, createdReleaseIssue);
+    
+    let createdFixversion = await CreateFixVersion(issues, createdVersion);
 
-    let createdReleaseIssue = await CreateReleaseIssue(req, res);
-    let createdIssueLink = await CreateIssueLink(req.body.issues,createdReleaseIssue);
-    let createdVersion = await CreateVersion(req, res, createdReleaseIssue);
+    //var createdReleaseIssue=[];
+    //var createdVersion=[];
+    //var createdIssueLink=[];
+    //var createdFixversion=[];
+
+    //await SendEmail(chosenIssues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion);
+    
 
     let result = {
       createdReleaseIssue: createdReleaseIssue,
+      createdIssueLink: createdIssueLink,
       createdVersion: createdVersion,
-      createdIssueLink: createdIssueLink
+      createdFixversion: createdFixversion
     };
 
     return res.status(200).send(result);
-  } catch (error) {
-    console.log(error);
-    return res.status(500).send(error);
+  } catch (err) {
+    console.log(err)
+    res.status(500).send({error: err.message});
   }
 });
 
-async function CreateIssueLink(issues, createdReleaseIssue) {
-  let iLink = {
-    type: {
-      name: "Releases"
-    },
-    inwardIssue: {
-      key: createdReleaseIssue.key
-    },
-    outwardIssue: {
-      key: issues[0].label
-    },
-    comment: {
-      body: `Linked related issue! ${createdReleaseIssue.key} to ${
-        issues[0].label
-      } generated by the quoting release management tool`
-    }
-  };
+async function CreateFixVersion(issues, createdVersion) {
+  let issueKey;
+  // createdVersion = {
+  //   name:  "RM-QT/2019-01-17"
+  // }
 
-  let issueLink = await jira.issueLink.createIssueLink({ issueLink: iLink });
-  console.log(issueLink);
-  return issueLink;
+  try
+  {
+    return await Promise.all(issues.map(async (issue) => {
+      issueKey = issue.key
+
+      // Edit the current issue to have the FixVersion we just created
+      let i = {
+        fields: {
+          fixVersions: [{
+            name: createdVersion.name,
+          }]
+        }
+      };
+
+      // Find out if we have any existing FixVersions on this issue already
+      let existingFixVersions = issue.fields.fixVersions.map(
+        x =>
+          (fixVersions = {
+            name:  x.name
+          })
+      );
+
+
+      // If we do have existing FixVersions on the issue, then add them back on, along with the new FixVersion
+      if(existingFixVersions && existingFixVersions.length > 0){
+        existingFixVersions.forEach(FixVersion => {
+          i.fields.fixVersions.push(FixVersion) 
+        });
+      }
+
+      console.log(JSON.stringify(i))
+
+      // issue key eg: QT-2000
+      await jira.issue.editIssue({issueKey: issueKey, issue: i }); // If fix version exists, need to replace it not edit
+      return JSON.stringify(i); 
+
+    }))
+    
+  } catch(err) {
+    console.log(err)
+    throw Error(`Issue ${issueKey} failed to create fix version for ${createdVersion.name}.`);
+  }
 }
 
-async function CreateReleaseIssue(req, res) {
-  //${baseurl}/issue console.log(req.body.issue[0].label);
-  let date = moment() .utc(req.body.date).format("YYYY-MM-DD H:mm:ss");
+async function CheckIssuesExist(issues){  // Call every endpoint, if it fails to find an issue it will throw
+  let issueKey;
+  try
+  {
+    return await Promise.all(issues.map(async (issue) => {
+        issueKey = issue.label
+        return await jira.issue.getIssue({issueKey: issueKey, fields:["key,fixVersions"]});
+    }));
+    
+  } catch(err) {
+    console.log(err);
+    throw Error(`Issue ${issueKey} does not exist or you do not have permission to see it.`);
+  }
+}
+
+
+async function CreateIssueLink(issues, createdReleaseIssue) {
+  let issueKey;
+
+  try
+  {
+    return await Promise.all(issues.map(async (issue) => {
+      
+      issueKey = issue.key
+      let iLink = {
+        type: {
+          name: "Releases"
+        },
+        inwardIssue: {
+          key: createdReleaseIssue.key
+        },
+        outwardIssue: {
+          key: issueKey
+        },
+        comment: {
+          body: `Linked related issue! ${createdReleaseIssue.key} to ${
+            issueKey
+          } generated by the quoting release management tool`
+        }
+      };
+
+      await jira.issueLink.createIssueLink({ issueLink: iLink });
+      return JSON.stringify(iLink);
+
+    }))
+    
+  } catch {
+    throw Error(`Issue ${issueKey} failed to link to ${createdReleaseIssue.key}.`);
+  }
+}
+
+async function CreateReleaseIssue(issues, startdate, release) {
+  let datetimestart = moment(startdate).utc().format("YYYY-MM-DD H:mm");
+  let datetimeend = moment(startdate).add(2, "hours").format("YYYY-MM-DD H:mm")
 
   let i = {
     fields: {
       project: {
         id: releaseManagmentId //Release Management
       },
-      summary: `Quoting Test Release for ${req.body.release.label} - ${date}`, // In the title, add the team, service, date and time of the release,
-      description: `Release for ${req.body.release.label} at ${moment().utc(req.body.date).toDate()} for ${JSON.stringify(req.body.issues )} generated by the quoting release management tool`,
+      summary: `Quoting Release for ${release.label} : ${datetimestart} - ${datetimeend}`, // In the title, add the team, service, date and time of the release,
+      description: `Release for ${release.label} created at ${moment().utc(startdate).toDate()} for ${JSON.stringify(issues.map(
+        x => x.key))} generated by the quoting release management tool`,
       issuetype: {
-        id: releaseIssueTypeId, //Release into production" issuetype
+        id: releaseIssueTypeId, // Release into production" issuetype
         name: "Release"
       },
       customfield_11200: {id: "21248"}, // Team affected
       customfield_10802: [{ id: "21249"}], // Products affected
-      customfield_11502: moment(req.body.date).format(), //startdate
-      customfield_11501: moment(req.body.date).add(2, "hours").format() //enddate
+      customfield_11502: moment(startdate).format(), //startdate
+      customfield_11501: moment(startdate).add(2, "hours").format() //enddate
     }
   };
 
@@ -253,23 +327,74 @@ async function CreateReleaseIssue(req, res) {
   return issue;
 }
 
-async function CreateVersion(req, res, createdReleaseIssue) {
-  let date = moment().utc(req.body.date).format("YYYY-MM-DD");
+async function CreateVersion(startdate, release, createdReleaseIssue) {
+  let date = moment(startdate).utc().format("YYYY-MM-DD");
 
   let v = {
-    name: `${req.body.release.value}/${date}`,
+    name: `${release.value}/${date}`,
     startDate: date,
     releaseDate: date,
     description: `${createdReleaseIssue.key}`,
     projectId: projectId,
     released: false
   };
+
   let version = await jira.version.createVersion({ version: v });
   console.log(version);
-  //return v
-  return res.status(200).send(version);
+  return version;
 }
 
+async function SendEmail(chosenIssues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion) {
+
+
+  let datetimestart = moment(chosenStartdate).utc().format("YYYY-MM-DD H:mm");
+  let datetimeend = moment(chosenStartdate).add(2, "hours").format("YYYY-MM-DD H:mm")
+
+try{
+    
+    var options = {
+      method: "POST",
+      url: `https://outlook.office365.com/api/v1.0/me/events`,
+      auth: {
+        username: username,
+        password: ""
+      },
+       headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+      body: JSON.stringify({
+        "Subject": "IM AN OUTLOOK API Calendar event. How did I get here? Im not good with computer",
+        "Body": {
+          "ContentType": "HTML",
+          "Content": "It's your boi!"
+        },
+        "Start":"2018-12-21T05:35:05Z",
+        "End":  "2018-12-21T05:35:05Z",
+        "Attendees": [
+          {
+            "EmailAddress": {
+              "Address": username,
+              "Name": "Matthew Huk"
+            },
+            "Type": "Required"
+          }
+        ]
+      })
+     
+    };
+
+    console.log(options);
+    await request.post(options, function(error, response, body) {
+      if (error) throw new Error(error);
+      return;
+    });
+
+  } catch(error) {
+    throw Error(`Email failed ${error}`);
+  }
+};
+  
 // Choose the port and start the server
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
