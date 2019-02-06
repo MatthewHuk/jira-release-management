@@ -8,10 +8,6 @@ const morgan = require("morgan");
 const JiraClient = require("jira-connector");
 var request = require("request");
 
-const jiraHost = "";
-const username = "";
-const baseurl = "";
-
 
 const projectId = "11702";
 const releaseManagmentId = "11701";
@@ -105,7 +101,7 @@ app.use(async function(req, res, next) {
     host: jiraHost,
     basic_auth: {
       username: username,
-      password: ""
+      password: password
     }
   });
 
@@ -114,18 +110,19 @@ app.use(async function(req, res, next) {
 
 app.get("/issues-in-sprint", async function(req, res) {
   try {
-    
     let sprint = await jira.board.getSprintsForBoard({boardId: boardId});
     var currentSprintindex = sprint.values.findIndex(sprint => sprint.state === "active");
     let currentSprintId = sprint.values[currentSprintindex].id
     let previousSprintid = sprint.values[currentSprintindex -1].id 
+
+    //return await jira.search.search({regexp: `Sprint in (${currentSprintId},${previousSprintid})&fields=id,key&maxResults=75`});
 
     var options = {
       method: "GET",
       url: `${baseurl}/search?jql=Sprint in (${currentSprintId},${previousSprintid})&fields=id,key&maxResults=75`,
       auth: {
         username: username,
-        password: ""
+        password: password
       },
       headers: {
         Accept: "application/json"
@@ -159,13 +156,6 @@ app.post("/create-release", async function(req, res) {
     
     let issues = await CheckIssuesExist(req.body.issues) // The chosen issues to release
  
-    // await Promise.all(issues.map(async (issue) => {
-    //   console.log(issue.key)
-    //   await Promise.all(issue.fields.fixVersions.map(async (fixversion) => {
-    //     console.log(fixversion.name)
-    //   }));
-    // }));
-
     let createdReleaseIssue = await CreateReleaseIssue(issues, chosenStartdate, chosenService);
   
     let createdIssueLink = await CreateIssueLink(issues,createdReleaseIssue);
@@ -174,14 +164,14 @@ app.post("/create-release", async function(req, res) {
     
     let createdFixversion = await CreateFixVersion(issues, createdVersion);
 
-    //var createdReleaseIssue=[];
-    //var createdVersion=[];
-    //var createdIssueLink=[];
-    //var createdFixversion=[];
+    // var issues=[];
+    // var createdReleaseIssue=[];
+    // var createdVersion=[];
+    // var createdIssueLink=[];
+    // var createdFixversion=[];
 
-    //await SendEmail(chosenIssues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion);
+    await SendEmail(issues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion);
     
-
     let result = {
       createdReleaseIssue: createdReleaseIssue,
       createdIssueLink: createdIssueLink,
@@ -344,55 +334,39 @@ async function CreateVersion(startdate, release, createdReleaseIssue) {
   return version;
 }
 
-async function SendEmail(chosenIssues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion) {
+
+async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion) {
 
 
   let datetimestart = moment(chosenStartdate).utc().format("YYYY-MM-DD H:mm");
   let datetimeend = moment(chosenStartdate).add(2, "hours").format("YYYY-MM-DD H:mm")
 
-try{
-    
-    var options = {
-      method: "POST",
-      url: `https://outlook.office365.com/api/v1.0/me/events`,
-      auth: {
-        username: username,
-        password: ""
-      },
-       headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json"
-        },
-      body: JSON.stringify({
-        "Subject": "IM AN OUTLOOK API Calendar event. How did I get here? Im not good with computer",
-        "Body": {
-          "ContentType": "HTML",
-          "Content": "It's your boi!"
-        },
-        "Start":"2018-12-21T05:35:05Z",
-        "End":  "2018-12-21T05:35:05Z",
-        "Attendees": [
-          {
-            "EmailAddress": {
-              "Address": username,
-              "Name": "Matthew Huk"
-            },
-            "Type": "Required"
-          }
-        ]
-      })
-     
-    };
+  var ews = require("ews-javascript-api");
+  ews.EwsLogging.DebugLogEnabled = false;
+  
+  var exch = new ews.ExchangeService(ews.ExchangeVersion.Exchange2013);
+  
+  exch.Credentials = new ews.ExchangeCredentials("matthew.huk@bglgroup.co.uk", "");
+  
+  exch.Url = new ews.Uri("https://outlook.office365.com/EWS/Exchange.asmx");
+  
+  var appointment = new ews.Appointment(exch);
+  
+  appointment.Subject = `Quoting release for ${chosenService.label}`;
+  appointment.Body = new ews.TextBody(`The quoting Jira release app wants to book a release with you at ${datetimestart} to ${datetimeend} for ${createdReleaseIssue.key} containing issues: ${JSON.stringify(issues.map(
+    x => x.key))}`);
+  appointment.Start = new ews.DateTime(chosenStartdate);
+  appointment.End = appointment.Start.Add(2, "h");
+  appointment.Location = "Quoting Towers";
+  appointment.RequiredAttendees.Add("dg-quotingreleases@bglgroup.onmicrosoft.com");
+  //appointment.OptionalAttendees.Add("Roxana.cojocari@bglgroup.co.uk");
+  
+  appointment.Save(ews.SendInvitationsMode.SendToAllAndSaveCopy).then(function () {
+      console.log("done - check email");
+  }, function (error) {
+      console.log(error);
+  });
 
-    console.log(options);
-    await request.post(options, function(error, response, body) {
-      if (error) throw new Error(error);
-      return;
-    });
-
-  } catch(error) {
-    throw Error(`Email failed ${error}`);
-  }
 };
   
 // Choose the port and start the server
@@ -400,3 +374,5 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`Listening on port ${PORT}`);
 });
+
+
