@@ -18,17 +18,24 @@ class Releases extends Component {
     // this.handleReleaseChange = this.handleReleaseChange.bind(this);
     // this.handleIssueChange = this.handleIssueChange.bind(this);
     // this.handleDateChange = this.handleDateChange.bind(this);
+    //this.handleCommentsChange = this.handleCommentsChange.bind(this);
 
     this.state = {
       issueData: [],
       releaseData: [],
       selectedIssue: null,
       selectedRelease: null,
-      selectedDate: moment().startOf("day").add(8.5, "hours"),
+      selectedDate: moment().startOf("day").add(9, "hours"),
+      comments: '',
       isLoading: true,
       error:null
     };
   }
+
+  handleCommentsChange = enteredComment => {
+    this.setState({ comments: enteredComment.target.value });
+    console.log(`Comments:`, enteredComment.target.value);
+  };
 
   handleIssueChange = selectedIssue => {
     console.log(selectedIssue);
@@ -47,8 +54,10 @@ class Releases extends Component {
   };
 
   async componentDidMount() {
-    const issues = (await axios.get("http://localhost:5001/issues-in-sprint"))
-      .data;
+
+    try{
+
+    const issues = (await axios.get("http://localhost:5001/issues-in-sprint")).data;
     const releases = (await axios.get("http://localhost:5001/releases")).data;
 
     //console.log(releases); console.log(issues);
@@ -57,11 +66,16 @@ class Releases extends Component {
       releaseData: releases,
       isLoading: false
     });
-  }
 
-  async onSubmit(e) {
-    e.preventDefault();
-    console.log(`selected release is ${this.state.selectedRelease} and selected issue is ${this.state.selectedIssue}  and date is ${this.state.selectedDate}`);
+    } catch(err) {
+     console.log(err)
+      let e = (err.response) ? err.response.data : err;
+      this.setState({error: e.error})    }
+}
+
+  async onSubmit(event) {
+    event.preventDefault();
+    console.log(`selected release is ${this.state.selectedRelease} and selected issue is ${this.state.selectedIssue}  and date is ${this.state.selectedDate} and comments ${this.state.comments}`);
 
     try{
 
@@ -70,9 +84,15 @@ class Releases extends Component {
       const result = await axios.post("http://localhost:5001/create-release", {
         release: this.state.selectedRelease,
         issues: this.state.selectedIssue,
-        date: this.state.selectedDate
+        date: this.state.selectedDate,
+        comments: this.state.comments
       });
-  
+      
+      // Clear input to prevent multiple clicks by mistake
+      // this.setState({
+      //   selectedRelease: undefined,
+      // });
+
       console.log(result);
 
     } catch(err) {
@@ -130,6 +150,14 @@ class Releases extends Component {
             </div>
           </div>
           <div className="row">
+          <div className="col-md-12">
+            <div className="form-group">
+            {/* <label htmlFor="comments">CI build and comments</label> */}
+                <textarea className="form-control" id="comments" placeholder="CI build and any extra info" rows="3" onChange={this.handleCommentsChange} value={this.state.comments}></textarea>
+              </div>
+            </div>
+          </div>
+          <div className="row">
           <div className="col-md-4">
             <div className="form-group">
               <input
@@ -138,6 +166,7 @@ class Releases extends Component {
                 disabled={
                   !this.state.selectedRelease ||
                   !this.state.selectedDate ||
+                  !this.state.comments ||
                   !(this.state.selectedIssue && this.state.selectedIssue.length > 0)
                 }
                 className="btn btn-primary"
