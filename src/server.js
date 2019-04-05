@@ -5,15 +5,25 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const request = require("request");
-const JiraClient = require("jira-connector");
-const moment = require("moment");
-require("moment/locale/en-gb");
 
+const nconf = require('nconf');
+// Register Configuration
+require('./config');
+
+const JiraClient = require("jira-connector");
+const moment = require("moment"); require("moment/locale/en-gb");
+
+const {services} = require("./services");
 const jiraHost = "";
 const baseurl = "";
-const username = "";
-const password = ""
+const username = nconf.get('JIRA_USER');
+const password = nconf.get('JIRA_PASSWORD');
 
+// Details for sending email
+const emailGroupTo = "" // The teams email to send an appointment
+const exchangeUser = nconf.get('EXCHANGE_USER');
+const exchangePass = nconf.get('EXCHANGE_PASSWORD');
+const appointmentLocation = "Quoting Towers"
 const boardId = "366"; // Quoting Sprint board
 
 // Identifiers for creating a version
@@ -27,12 +37,7 @@ const releaseIssueTypeId = "10600"; // Release into production" issuetype
 const teamAffected = "21248"; // Team affected
 const productsAffected = "21249"; // Products affected
 
-// Details for sending email
-const emailGroupTo = "" // The teams email to send an appointment
-const exchangeUser = "";
-const exchangePass = ""
-const appointmentLocation = "Quoting Towers"
-
+const path = require('path');
 const app = express();
 
 // enhance app security with Helmet
@@ -50,83 +55,13 @@ app.use(morgan("combined"));
 
 let jira;  // The JiraClient calling out to the Jira Api
 
-app.get("/ping", function(req, res) {
-  return res.send("pong");
-});
-
 app.get("/releases", function(req, res) {
-  return res.status(200).send([
-    {
-      label: "API nodes (.NET Framework)",
-      value: "API-QT"
-    },
-    {
-      label: "Enquiry Orchestrator (.NET Core)",
-      value: "EO-QT"
-    },
-    {
-      label: "Provider Nodes",
-      value: "P-QT"
-    },
-    {
-      label: "Provider Shims",
-      value: "PSH-QT"
-    },
-    {
-      label: "Retrieval Aggregator",
-      value: "RA-QT"
-    },
-    {
-      label: "Risk migrator",
-      value: "RM-QT"
-    },
-    {
-      label: "Terminator",
-      value: "T-QT"
-    },
-    {
-      label: "API Shims",
-      value: "ASH-QT"
-    },
-    {
-      label: "Rabbit",
-      value: "RB-QT"
-    },
-    {
-      label: "AWS",
-      value: "AWS-QT"
-    },
-    {
-      label: "Diagnostics",
-      value: "DIAG-QT"
-    },
-    {
-      label: "Auxiliary Data Manager",
-      value: "AUX-QT"
-    },
-    {
-      label: "Search Engine",
-      value: "SE-QT"
-    },
-    {
-      label: "Event Generator",
-      value: "EG-QT"
-    },
-    {
-      label: "Realtime Quotability",
-      value: "RQ-QT"
-    },
-    {
-      label: "Quoting",
-      value: "QT"
-    }
-  ]);
+  return res.status(200).send(services);
 });
-
 
 app.use(async function(req, res, next) {
 
-  jira = new JiraClient({ // Basic auth expiries the client after awhile, so i'm  replacing the client with each request (because I'm that lazy)
+  jira = new JiraClient({ // Basic auth expiries the client after awhile, so i'm replacing the client with each request (because I'm that lazy)
     host: jiraHost,
     basic_auth: {
       username: username,
@@ -146,7 +81,7 @@ app.get("/issues-in-sprint", async function(req, res) {
     let previousSprintid = sprint.values[currentSprintindex -1].id 
 
     //return await jira.search.search({regexp: `Sprint in (${currentSprintId},${previousSprintid})&fields=id,key&maxResults=75`});
-
+    // Jira client api does not yet support /search endpoint, so call it with a regular request.
     var options = {
       method: "GET",
       url: `${baseurl}/search?jql=Sprint in (${currentSprintId},${previousSprintid})&fields=id,key&maxResults=75`,
@@ -173,6 +108,7 @@ app.get("/issues-in-sprint", async function(req, res) {
       return res.status(response.statusCode).send(map);
     });
   } catch (err) {
+    console.log(err);
     res.status(500).send({error: err.message});
   }
 });
@@ -181,10 +117,11 @@ app.post("/create-release", async function(req, res) {
   try {
     
     let chosenService = req.body.release // The service you are releasing
-    let chosenStartdate = req.body.date // The date you want to release
-    let comments = req.body.comments // The date you want to release
+    let chosenStartdate = moment(req.body.date).utc(); // The date you want to release
+    let comments = req.body.comments // Any comments about the release (CI Builds)
+  
     let issues = await CheckIssuesExist(req.body.issues) // The chosen issues to release
- 
+
     let createdReleaseIssue = await CreateReleaseIssue(issues, chosenStartdate, chosenService);
   
     let createdIssueLink = await CreateIssueLink(issues,createdReleaseIssue);
@@ -193,14 +130,15 @@ app.post("/create-release", async function(req, res) {
     
     let createdFixversion = await CreateFixVersion(issues, createdVersion);
    
-    //var issues=[];
+
     // var createdReleaseIssue=[];
     // var createdVersion=[];
     // var createdIssueLink=[];
     // var createdFixversion=[];
 
     await SendEmail(issues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion, comments);
-    
+
+
     let result = {
       issues: issues,
       createdReleaseIssue: createdReleaseIssue,
@@ -252,7 +190,7 @@ async function CreateFixVersion(issues, createdVersion) {
         });
       }
 
-      console.log(JSON.stringify(i))
+      //console.log(JSON.stringify(i))
 
       // issue key eg: QT-2000
       await jira.issue.editIssue({issueKey: issueKey, issue: i }); // If fix version exists, need to replace it not edit
@@ -312,14 +250,14 @@ async function CreateIssueLink(issues, createdReleaseIssue) {
 
     }))
     
-  } catch {
+  } catch(err) {
     throw Error(`Issue ${issueKey} failed to link to ${createdReleaseIssue.key}.`);
   }
 }
 
 async function CreateReleaseIssue(issues, startdate, release) {
-  let datetimestart = moment(startdate).utc().format("YYYY-MM-DD H:mm");
-  let datetimeend = moment(startdate).add(2, "hours").format("YYYY-MM-DD H:mm")
+  let datetimestart = startdate.format("YYYY-MM-DD H:mm");
+  let datetimeend = startdate.add(2, "hours").format("YYYY-MM-DD H:mm")
 
   let i = {
     fields: {
@@ -327,7 +265,7 @@ async function CreateReleaseIssue(issues, startdate, release) {
         id: releaseManagmentId //Release Management
       },
       summary: `Quoting Release for ${release.label} : ${datetimestart} - ${datetimeend}`, // In the title, add the team, service, date and time of the release,
-      description: `Release for ${release.label} created at ${moment().utc(startdate).toDate()} for ${JSON.stringify(issues.map(
+      description: `Release for ${release.label} created at ${moment().utc().toDate()} for ${JSON.stringify(issues.map(
         x => x.key))} generated by the quoting release management tool`,
       issuetype: {
         id: releaseIssueTypeId, // Release into production" issuetype
@@ -335,8 +273,8 @@ async function CreateReleaseIssue(issues, startdate, release) {
       },
       customfield_11200: {id: teamAffected}, // Team affected
       customfield_10802: [{ id: productsAffected}], // Products affected
-      customfield_11502: moment(startdate).format(), // Startdate
-      customfield_11501: moment(startdate).add(2, "hours").format() // EndDate
+      customfield_11502: startdate.format(), // Startdate
+      customfield_11501: startdate.add(2, "hours").format() // EndDate
     }
   };
 
@@ -348,7 +286,7 @@ async function CreateReleaseIssue(issues, startdate, release) {
 }
 
 async function CreateVersion(startdate, release, createdReleaseIssue) {
-  let date = moment(startdate).utc().format("YYYY-MM-DD");
+  let date = startdate.format("YYYY-MM-DD");
 
   let v = {
     name: `${release.value}/${date}`,
@@ -367,8 +305,8 @@ async function CreateVersion(startdate, release, createdReleaseIssue) {
 
 async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion, comments) {
 
-  let datetimestart = moment(chosenStartdate).utc().format("DD-MM-YYYY H:mm");
-  let datetimeend = moment(chosenStartdate).add(2, "hours").format("DD-MM-YYYY H:mm")
+  let datetimestart = chosenStartdate.format("DD-MM-YYYY H:mm");
+  let datetimeend = chosenStartdate.add(2, "hours").format("DD-MM-YYYY H:mm")
 
   var ews = require("ews-javascript-api");
   ews.EwsLogging.DebugLogEnabled = false;
@@ -384,13 +322,10 @@ async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseI
   appointment.Subject = `Quoting release for ${chosenService.label}`;
   appointment.Body = new ews.TextBody(`The quoting Jira release app wants to book a release with you at ${datetimestart} to ${datetimeend} for ${createdReleaseIssue.key} \r\n Issues: ${JSON.stringify(issues.map(x => x.key))} \r\n CI Build and comments: ${comments} `);
 
-  //appointment.Body.BodyType = 0, //HTML
   appointment.Start = new ews.DateTime(chosenStartdate);
   appointment.End = appointment.Start.Add(2, "h");
   appointment.Location = appointmentLocation;
   appointment.RequiredAttendees.Add(emailGroupTo);
-  //appointment.RequiredAttendees.Add("");
-  //appointment.OptionalAttendees.Add("");
 
   appointment.Save(ews.SendInvitationsMode.SendToAllAndSaveCopy).then(function () {
       console.log("done - check email");
@@ -400,8 +335,15 @@ async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseI
 
 };
   
+
+app.use(express.static(path.join(__dirname, '../build')));
+
+ app.get('/', function(req, res) {
+   res.sendFile(path.join(__dirname, '../build', 'index.html'));
+ });
+
 // Choose the port and start the server
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5011;
 app.listen(PORT, () => {
   console.log(`Listening on port ${PORT}`);
 });

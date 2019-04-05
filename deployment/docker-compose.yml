@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  app:
+    environment:
+      LOG_LEVEL: ERROR
+      NODE_ENV: production
+      JIRA_USER: "${JIRA_USER}"
+      JIRA_PASSWORD: "${JIRA_PASSWORD}"
+      EXCHANGE_USER: "${EXCHANGE_USER}"
+      EXCHANGE_PASSWORD: "${EXCHANGE_PASSWORD}"
+    image: $REGISTRY/$PRODUCT/$SERVICE:$VERSION
+    container_name: app
+    restart: "on-failure:10"
+    external_links:
+      - log-exporter
+    ports:
+      - 5011:5011
+  proxy:
+    image: $REGISTRY/platform/nginx-proxy:$NGINX_VERSION
+    container_name: nginx
+    environment:
+      UPSTREAM_CONTAINER: app
+      UPSTREAM_PORT: 5011
+    ports:
+      - "80:80"
+    links:
+      - app
+    restart: "on-failure:10"
