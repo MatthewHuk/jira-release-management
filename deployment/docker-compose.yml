@@ -9,6 +9,8 @@ services:
       JIRA_PASSWORD: "${JIRA_PASSWORD}"
       EXCHANGE_USER: "${EXCHANGE_USER}"
       EXCHANGE_PASSWORD: "${EXCHANGE_PASSWORD}"
+      JIRA_HOST: "${JIRA_HOST}"
+      EMAIL_GROUP: "${EMAIL_GROUP}"
     image: $REGISTRY/$PRODUCT/$SERVICE:$VERSION
     container_name: app
     restart: "on-failure:10"

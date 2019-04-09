@@ -7,7 +7,7 @@ import CreatableSelect from "react-select/lib/Creatable";
 import "./Release.css";
 
 const Datetime = require("react-datetime");
-const moment = require("moment");  require("moment/locale/en-gb");
+const moment = require("moment"); require("moment/locale/en-gb");
 
 class Releases extends Component {
   constructor(props) {
@@ -44,8 +44,8 @@ class Releases extends Component {
   };
 
   handleDateChange = selectedDate => {
-    this.setState({ selectedDate });
-    console.log(`Date selected:`, selectedDate);
+    this.setState({ selectedDate : selectedDate });
+    console.log(`Date selected:`, moment(selectedDate).utc());
   };
 
   async componentDidMount() {

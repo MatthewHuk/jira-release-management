@@ -28,6 +28,9 @@ export ENVIRONMENT=$(echo "$CONFIG" | jq -r .ENVIRONMENT)
 export NGINX_VERSION=$(echo "$CONFIG" | jq -r .NGINX_VERSION)
 export JIRA_USER=$(echo "${CONFIG}" | jq -r .JIRA_USER)
 export EXCHANGE_USER=$(echo "${CONFIG}" | jq -r .EXCHANGE_USER)
+export JIRA_HOST=$(echo "${CONFIG}" | jq -r .JIRA_HOST)
+export EMAIL_GROUP=$(echo "${CONFIG}" | jq -r .EMAIL_GROUP)
+
 
 aws s3 --region eu-west-1 cp s3://ctm-software-cache/cloudkat/cloudkat-linux-${CLOUDKAT_VERSION}.zip .
 unzip cloudkat-linux-${CLOUDKAT_VERSION}.zip

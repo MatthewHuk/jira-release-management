@@ -5,22 +5,22 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const request = require("request");
-
+const moment = require("moment"); require("moment/locale/en-gb");
 const nconf = require('nconf');
-// Register Configuration
-require('./config');
+require('./config'); // Register Configuration
 
 const JiraClient = require("jira-connector");
-const moment = require("moment"); require("moment/locale/en-gb");
 
 const {services} = require("./services");
-const jiraHost = "";
-const baseurl = "";
+
+// Details for connecting to Jira
+const jiraHost = nconf.get('JIRA_HOST');
+const baseurl = `https://${jiraHost}/rest/api/3`;
 const username = nconf.get('JIRA_USER');
 const password = nconf.get('JIRA_PASSWORD');
 
 // Details for sending email
-const emailGroupTo = "" // The teams email to send an appointment
+const emailGroupTo = nconf.get('EMAIL_GROUP') // The teams email to send an appointment
 const exchangeUser = nconf.get('EXCHANGE_USER');
 const exchangePass = nconf.get('EXCHANGE_PASSWORD');
 const appointmentLocation = "Quoting Towers"
@@ -130,13 +130,13 @@ app.post("/create-release", async function(req, res) {
     
     let createdFixversion = await CreateFixVersion(issues, createdVersion);
    
-
+    // var issues = [];
     // var createdReleaseIssue=[];
     // var createdVersion=[];
     // var createdIssueLink=[];
     // var createdFixversion=[];
 
-    await SendEmail(issues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion, comments);
+    await SendEmail(issues, chosenService, req.body.date, createdReleaseIssue, comments);
 
 
     let result = {
@@ -303,12 +303,16 @@ async function CreateVersion(startdate, release, createdReleaseIssue) {
 }
 
 
-async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseIssue, createdVersion, comments) {
+async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseIssue, comments) {
 
-  let datetimestart = chosenStartdate.format("DD-MM-YYYY H:mm");
-  let datetimeend = chosenStartdate.add(2, "hours").format("DD-MM-YYYY H:mm")
+  let datetimestart = moment(chosenStartdate).utc().format("DD-MM-YYYY H:mm");
+  let datetimeend =  moment(chosenStartdate).utc().add(2, "hours").format("DD-MM-YYYY H:mm")
+  console.log(chosenStartdate);
+  console.log(datetimestart);
+  console.log(datetimeend);
 
   var ews = require("ews-javascript-api");
+  
   ews.EwsLogging.DebugLogEnabled = false;
   
   var exch = new ews.ExchangeService(ews.ExchangeVersion.Exchange2013);
@@ -321,11 +325,13 @@ async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseI
   
   appointment.Subject = `Quoting release for ${chosenService.label}`;
   appointment.Body = new ews.TextBody(`The quoting Jira release app wants to book a release with you at ${datetimestart} to ${datetimeend} for ${createdReleaseIssue.key} \r\n Issues: ${JSON.stringify(issues.map(x => x.key))} \r\n CI Build and comments: ${comments} `);
-
   appointment.Start = new ews.DateTime(chosenStartdate);
   appointment.End = appointment.Start.Add(2, "h");
   appointment.Location = appointmentLocation;
   appointment.RequiredAttendees.Add(emailGroupTo);
+
+  console.log(appointment.Start)
+  console.log(appointment.End)
 
   appointment.Save(ews.SendInvitationsMode.SendToAllAndSaveCopy).then(function () {
       console.log("done - check email");
