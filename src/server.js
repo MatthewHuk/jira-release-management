@@ -7,6 +7,8 @@ const morgan = require("morgan");
 const request = require("request");
 const moment = require("moment"); require("moment/locale/en-gb");
 const nconf = require('nconf');
+const ews = require("ews-javascript-api");
+
 require('./config'); // Register Configuration
 
 const JiraClient = require("jira-connector");
@@ -311,7 +313,6 @@ async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseI
   console.log(datetimestart);
   console.log(datetimeend);
 
-  var ews = require("ews-javascript-api");
   
   ews.EwsLogging.DebugLogEnabled = false;
   
