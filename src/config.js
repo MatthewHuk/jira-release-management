@@ -20,6 +20,27 @@ nconf.argv({
         alias: 'exchange-password',
         describe: 'password for sending a meeting request via outlook',
         demand: false
+    },
+    JIRA_HOST: {
+        alias: 'jira-host',
+        describe: 'jira host environment',
+        demand: false
+    },
+    JIRA_HOST: {
+        alias: 'email-group',
+        describe: 'The teams email to send an appointment',
+        demand: false
     }
 })
     .env()
+    .defaults({
+        JIRA_USER: "",
+        JIRA_PASSWORD: "",
+        EXCHANGE_USER: "",
+        EXCHANGE_PASSWORD: "",
+        JIRA_HOST: "",
+        EMAIL_GROUP: '' 
+    });
+
+
+    
