@@ -18,19 +18,11 @@ read -d ';' CONFIG_SETTINGS << EOL
   "JIRA_USER": "${JIRA_USER}",
   "EXCHANGE_USER": "${EXCHANGE_USER}",
   "JIRA_HOST": "${JIRA_HOST}",
-  "EMAIL_GROUP": "${EMAIL_GROUP}"
+  "EMAIL_GROUP": "${EMAIL_GROUP}",
+  "JIRA_PASSWORD": "${JIRA_PASSWORD}",
+  "EXCHANGE_PASSWORD": "${EXCHANGE_PASSWORD}"
 };
 EOL
-
-if [ ! -f ./cloudkat ]; then
-    aws s3 --region eu-west-1 cp s3://ctm-software-cache/cloudkat/cloudkat-linux-${CLOUDKAT_VERSION}.zip .
-    unzip cloudkat-linux-${CLOUDKAT_VERSION}.zip
-    rm cloudkat-linux-${CLOUDKAT_VERSION}.zip
-    chmod u+x cloudkat
-fi
-
-./cloudkat secret save -e ${ENVIRONMENT} -m metadata.json -n "jira_password" -s ${JIRA_PASSWORD}
-./cloudkat secret save -e ${ENVIRONMENT} -m metadata.json -n "exchange_password" -s ${EXCHANGE_PASSWORD}
 
 aws --region eu-west-1 kms encrypt --key-id arn:aws:kms:eu-west-1:482506117024:alias/quoting --plaintext "${CONFIG_SETTINGS}" --query CiphertextBlob --output text | base64 --decode > config-file
 

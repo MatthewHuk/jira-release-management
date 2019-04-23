@@ -30,16 +30,7 @@ export JIRA_USER=$(echo "${CONFIG}" | jq -r .JIRA_USER)
 export EXCHANGE_USER=$(echo "${CONFIG}" | jq -r .EXCHANGE_USER)
 export JIRA_HOST=$(echo "${CONFIG}" | jq -r .JIRA_HOST)
 export EMAIL_GROUP=$(echo "${CONFIG}" | jq -r .EMAIL_GROUP)
-
-
-if [ ! -f ./cloudkat ]; then
-    aws s3 --region eu-west-1 cp s3://ctm-software-cache/cloudkat/cloudkat-linux-${CLOUDKAT_VERSION}.zip .
-    unzip cloudkat-linux-${CLOUDKAT_VERSION}.zip
-    rm cloudkat-linux-${CLOUDKAT_VERSION}.zip
-    chmod u+x cloudkat
-fi
-
-export JIRA_PASSWORD=$(./cloudkat secret load -e ${ENVIRONMENT} -m metadata.json -n jira_password| tr -d " ")
-export EXCHANGE_PASSWORD=$(./cloudkat secret load -e ${ENVIRONMENT} -m metadata.json -n exchange_password| tr -d " ")
+export JIRA_PASSWORD=$(echo "${CONFIG}" | jq -r .JIRA_PASSWORD)
+export EXCHANGE_PASSWORD==$(echo "${CONFIG}" | jq -r .EXCHANGE_PASSWORD)
 
 docker-compose up -d
