@@ -5,7 +5,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const request = require("request");
-const moment = require("moment"); require("moment/locale/en-gb");
+const moment = require("moment");  require("moment/locale/en-gb"); require("moment-timezone");
 const nconf = require('nconf');
 const ews = require("ews-javascript-api");
 
@@ -309,25 +309,31 @@ async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseI
 
   let datetimestart = moment(chosenStartdate).utc().format("DD-MM-YYYY H:mm");
   let datetimeend =  moment(chosenStartdate).utc().add(2, "hours").format("DD-MM-YYYY H:mm")
-  console.log(chosenStartdate);
-  console.log(datetimestart);
-  console.log(datetimeend);
+  
+  let startDate = moment(chosenStartdate).utc();
 
+  if(startDate.isUTC())
+  {
+    console.log('Its stupid DST');
+    startDate.add(-1, "h")
+  }
   
   ews.EwsLogging.DebugLogEnabled = false;
-  
-  var exch = new ews.ExchangeService(ews.ExchangeVersion.Exchange2013);
-  
+
+  var exch = new ews.ExchangeService(ews.ExchangeVersion.Exchange2016);
+
   exch.Credentials = new ews.ExchangeCredentials(exchangeUser, exchangePass);
   
   exch.Url = new ews.Uri("https://outlook.office365.com/EWS/Exchange.asmx");
-  
+
   var appointment = new ews.Appointment(exch);
-  
+
   appointment.Subject = `Quoting release for ${chosenService.label}`;
-  appointment.Body = new ews.TextBody(`The quoting Jira release app wants to book a release with you at ${datetimestart} to ${datetimeend} for ${createdReleaseIssue.key} \r\n Issues: ${JSON.stringify(issues.map(x => x.key))} \r\n CI Build and comments: ${comments} `);
-  appointment.Start = new ews.DateTime(chosenStartdate);
+  appointment.Body = new ews.MessageBody(ews.BodyType.HTML,`The quoting Jira release app wants to book a release with you at ${datetimestart} to ${datetimeend} for ${createdReleaseIssue.key} \r\n Issues: ${JSON.stringify(issues.map(x => x.key))} \r\n CI Build and comments: ${comments} \r\n `);
+ 
+  appointment.Start = new ews.DateTime(startDate);
   appointment.End = appointment.Start.Add(2, "h");
+
   appointment.Location = appointmentLocation;
   appointment.RequiredAttendees.Add(emailGroupTo);
 
@@ -336,6 +342,7 @@ async function SendEmail(issues, chosenService, chosenStartdate, createdReleaseI
 
   appointment.Save(ews.SendInvitationsMode.SendToAllAndSaveCopy).then(function () {
       console.log("done - check email");
+      
   }, function (error) {
       console.log(error);
   });
