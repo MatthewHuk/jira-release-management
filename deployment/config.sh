@@ -22,10 +22,13 @@ read -d ';' CONFIG_SETTINGS << EOL
 };
 EOL
 
-aws s3 --region eu-west-1 cp s3://ctm-software-cache/cloudkat/cloudkat-linux-${CLOUDKAT_VERSION}.zip .
-unzip cloudkat-linux-${CLOUDKAT_VERSION}.zip
-rm cloudkat-linux-${CLOUDKAT_VERSION}.zip
-chmod u+x cloudkat
+if [ ! -f ./cloudkat ]; then
+    aws s3 --region eu-west-1 cp s3://ctm-software-cache/cloudkat/cloudkat-linux-${CLOUDKAT_VERSION}.zip .
+    unzip cloudkat-linux-${CLOUDKAT_VERSION}.zip
+    rm cloudkat-linux-${CLOUDKAT_VERSION}.zip
+    chmod u+x cloudkat
+fi
+
 ./cloudkat secret save -e ${ENVIRONMENT} -m metadata.json -n "jira_password" -s ${JIRA_PASSWORD}
 ./cloudkat secret save -e ${ENVIRONMENT} -m metadata.json -n "exchange_password" -s ${EXCHANGE_PASSWORD}
 
